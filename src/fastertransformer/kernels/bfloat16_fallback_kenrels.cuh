@@ -380,6 +380,11 @@ inline __device__ T add(T a, T b, T c, T d) {
     return (T)((float)a + (float)b + (float)c + (float)d);
 }
 
+// template<>
+// inline __device__ int8_t add<int8_t>(int8_t a, int8_t b, int8_t c, int8_t d){
+//     return (int8_t)((int16_t)a + (int16_t)b + (int16_t)c + (int16_t)d);
+// }
+
 #ifdef ENABLE_BF16
 template<>
 inline __device__ __nv_bfloat16 add(__nv_bfloat16 a, __nv_bfloat16 b, __nv_bfloat16 c, __nv_bfloat16 d) {
