@@ -17,6 +17,7 @@
 #pragma once
 
 #include "src/fastertransformer/utils/cuda_utils.h"
+#include "src/fastertransformer/layers/DenseWeight.h"
 
 namespace fastertransformer {
 
@@ -49,6 +50,12 @@ void cudaRandomUniform(T* buffer, const int size);
 
 template<typename T>
 int loadWeightFromBin(T*                  ptr,
+                      std::vector<size_t> shape,
+                      std::string         filename,
+                      FtCudaDataType      model_file_type = FtCudaDataType::FP32);
+
+template<typename T>
+int loadWeightFromBinQ(DenseWeight<T>                  &weight,
                       std::vector<size_t> shape,
                       std::string         filename,
                       FtCudaDataType      model_file_type = FtCudaDataType::FP32);

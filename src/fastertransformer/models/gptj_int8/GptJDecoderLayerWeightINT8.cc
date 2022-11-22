@@ -38,6 +38,7 @@ GptJDecoderLayerWeightINT8<T>::~GptJDecoderLayerWeightINT8()
 {
     if (is_maintain_buffer == true) {
         for (int i = 0; i < 9; i++) {
+            if(i == 2 || i == 3) continue;
             deviceFree(weights_ptr[i]);
         }
 
@@ -66,8 +67,10 @@ GptJDecoderLayerWeightINT8<T>::GptJDecoderLayerWeightINT8(const GptJDecoderLayer
 
     cudaD2Dcpy(weights_ptr[0], other.weights_ptr[0], hidden_units_);
     cudaD2Dcpy(weights_ptr[1], other.weights_ptr[1], hidden_units_);
-    cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(qwint8, other.qwint8, hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(qwscale, other.qwscale, 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
     cudaD2Dcpy(weights_ptr[4], other.weights_ptr[4], hidden_units_ / tensor_para_size_ * hidden_units_);
 
     cudaD2Dcpy(weights_ptr[5], other.weights_ptr[5], hidden_units_ * inter_size_ / tensor_para_size_);
@@ -90,8 +93,10 @@ GptJDecoderLayerWeightINT8<T>& GptJDecoderLayerWeightINT8<T>::operator=(const Gp
 
     cudaD2Dcpy(weights_ptr[0], other.weights_ptr[0], hidden_units_);
     cudaD2Dcpy(weights_ptr[1], other.weights_ptr[1], hidden_units_);
-    cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
-    cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(weights_ptr[2], other.weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(qwint8, other.qwint8, hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(qwscale, other.qwscale, 3 * hidden_units_ / tensor_para_size_);
+    // cudaD2Dcpy(weights_ptr[3], other.weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
     cudaD2Dcpy(weights_ptr[4], other.weights_ptr[4], hidden_units_ / tensor_para_size_ * hidden_units_);
 
     cudaD2Dcpy(weights_ptr[5], other.weights_ptr[5], hidden_units_ * inter_size_ / tensor_para_size_);
@@ -106,6 +111,7 @@ GptJDecoderLayerWeightINT8<T>& GptJDecoderLayerWeightINT8<T>::operator=(const Gp
 template<typename T>
 void GptJDecoderLayerWeightINT8<T>::loadModel(std::string dir_path, FtCudaDataType model_file_type)
 {
+    // FT_LOG_INFO("GPTJ-X");
     FT_CHECK(is_maintain_buffer == true);
     const std::string rank_spec = std::to_string(tensor_para_rank_);
 
@@ -113,13 +119,23 @@ void GptJDecoderLayerWeightINT8<T>::loadModel(std::string dir_path, FtCudaDataTy
         weights_ptr[0], {(size_t)hidden_units_}, dir_path + ".input_layernorm.bias.bin", model_file_type);
     loadWeightFromBin<T>(
         weights_ptr[1], {(size_t)hidden_units_}, dir_path + ".input_layernorm.weight.bin", model_file_type);
-    loadWeightFromBin<T>(weights_ptr[2],
-                         {(size_t)hidden_units_, (size_t)(3 * hidden_units_ / tensor_para_size_)},
-                         dir_path + ".attention.query_key_value.weight." + rank_spec + ".bin",
-                         model_file_type);
-
+    // load & quantize
+    // [DBG]
+    //  loadWeightFromBinQ<T>(weights_ptr[2],
+    //                      {(size_t)hidden_units_, (size_t)(3 * hidden_units_ / tensor_para_size_)},
+    //                      dir_path + ".attention.query_key_value.weight." + rank_spec + ".bin",
+    //                      model_file_type);
+    // exit(0);
+    // [END DBG]
+    // loadWeightFromBin<T>(weights_ptr[2],
+    //                      {(size_t)hidden_units_, (size_t)(3 * hidden_units_ / tensor_para_size_)},
+    //                      dir_path + ".attention.query_key_value.weight." + rank_spec + ".bin",
+    //                      model_file_type);
+    loadWeightFromBinQ<T>(self_attention_weights.query_weight, {(size_t)hidden_units_, (size_t)(3 * hidden_units_ / tensor_para_size_)}, 
+                          dir_path + ".attention.query_key_value.weight." + rank_spec + ".bin", model_file_type);
     // GPT-J does not have bias for QKV
-    cudaMemset(weights_ptr[3], 0, sizeof(T) * 3 * hidden_units_ / tensor_para_size_);
+    // Why are we still allocating a buffer for bias when we don't use it?
+    // cudaMemset(weights_ptr[3], 0, sizeof(T) * 3 * hidden_units_ / tensor_para_size_);
     loadWeightFromBin<T>(weights_ptr[4],
                          {(size_t)(hidden_units_ / tensor_para_size_), (size_t)hidden_units_},
                          dir_path + ".attention.dense.weight." + rank_spec + ".bin",
@@ -146,8 +162,12 @@ void GptJDecoderLayerWeightINT8<T>::setWeightPtr()
 {
     pre_layernorm_weights.beta                            = weights_ptr[0];
     pre_layernorm_weights.gamma                           = weights_ptr[1];
-    self_attention_weights.query_weight.kernel            = weights_ptr[2];
-    self_attention_weights.query_weight.bias              = weights_ptr[3];
+    // instead set attention_output_weight.int8_kernel and scale
+
+    // self_attention_weights.query_weight.kernel            = weights_ptr[2];
+    // self_attention_weights.query_weight.int8_kernel = qwint8;
+    // self_attention_weights.query_weight.scale = qwscale;
+    // self_attention_weights.query_weight.bias              = weights_ptr[3];
     self_attention_weights.attention_output_weight.kernel = weights_ptr[4];
 
     ffn_weights.intermediate_weight.kernel = weights_ptr[5];
@@ -163,8 +183,10 @@ void GptJDecoderLayerWeightINT8<T>::mallocWeights()
 {
     deviceMalloc(&weights_ptr[0], hidden_units_);
     deviceMalloc(&weights_ptr[1], hidden_units_);
-    deviceMalloc(&weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
-    deviceMalloc(&weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
+    // deviceMalloc(&weights_ptr[2], hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+    // deviceMalloc(&weights_ptr[3], 3 * hidden_units_ / tensor_para_size_);
+    // deviceMalloc(&qwint8, hidden_units_ * 3 * hidden_units_ / tensor_para_size_);
+    // deviceMalloc(&qwscale, 3 * hidden_units_ / tensor_para_size_);
     deviceMalloc(&weights_ptr[4], hidden_units_ / tensor_para_size_ * hidden_units_);
 
     deviceMalloc(&weights_ptr[5], hidden_units_ * inter_size_ / tensor_para_size_);

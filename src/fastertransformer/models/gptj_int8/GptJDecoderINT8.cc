@@ -119,7 +119,7 @@ int GptJDecoderINT8<T>::getFirstLayerParallelId()
 }
 
 template<typename T>
-GptJDecoderINT8<T>::GptJDecoderINT8(size_t                              max_batch_size,
+GptJDecoderINT8<T>::GptJDecoderINT8(size_t                      max_batch_size,
                             size_t                              head_num,
                             size_t                              size_per_head,
                             size_t                              inter_size,

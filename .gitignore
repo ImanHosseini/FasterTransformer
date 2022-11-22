@@ -6,3 +6,4 @@ __pycache__/
 .vscode
 ./translation
 .cache
+.vscode/settings.json

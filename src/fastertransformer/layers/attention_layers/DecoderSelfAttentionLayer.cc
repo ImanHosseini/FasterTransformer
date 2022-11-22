@@ -477,7 +477,9 @@ void DecoderSelfAttentionLayer<T>::forward(std::vector<fastertransformer::Tensor
     }
     else {
 #endif
+        FT_LOG_INFO("GPTJ-X:%d:%d", int8_mode_, batch_size);
         if (int8_mode_ != 0 && batch_size <= 2) {
+            FT_LOG_INFO("GTPJ-X:I8K");
             FT_CHECK(attention_weights->query_weight.int8_kernel != NULL
                      && attention_weights->query_weight.scale != NULL);
             int8WeightPerChannelLdkMultiplicationLauncher(attention_weights->query_weight.int8_kernel,

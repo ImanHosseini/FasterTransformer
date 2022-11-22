@@ -42,7 +42,7 @@ target_link_libraries(nvtx_utils PUBLIC -lnvToolsExt)
 add_library(memory_utils STATIC memory_utils.cu)
 set_property(TARGET memory_utils PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET memory_utils PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
-target_link_libraries(memory_utils PUBLIC -lnvToolsExt)
+target_link_libraries(memory_utils PUBLIC -lnvToolsExt quantization_int8_kernels)
 
 add_library(mpi_utils STATIC mpi_utils.cc)
 set_property(TARGET mpi_utils PROPERTY POSITION_INDEPENDENT_CODE  ON)

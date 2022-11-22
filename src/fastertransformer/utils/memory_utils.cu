@@ -16,7 +16,10 @@
 
 #include "src/fastertransformer/utils/logger.h"
 #include "src/fastertransformer/utils/memory_utils.h"
+#include "src/fastertransformer/kernels/quantization_int8_kernels.h"
 #include <curand_kernel.h>
+#include <cassert>
+#include <type_traits>
 
 namespace fastertransformer {
 
@@ -309,22 +312,120 @@ int loadWeightFromBinFunc(T* ptr, std::vector<size_t> shape, std::string filenam
     return 0;
 }
 
+
+template<typename T, typename T_IN>
+int loadWeightFromBinFuncQ(DenseWeight<T> &weight, std::vector<size_t> shape, std::string filename)
+{
+    if (shape.size() > 2) {
+        printf("[ERROR] shape should have less than two dims \n");
+        return -1;
+    }
+    size_t dim0 = shape[0], dim1 = 1;
+    if (shape.size() == 2) {
+        dim1 = shape[1];
+    }
+    size_t size = dim0 * dim1;
+    if (size == 0) {
+        FT_LOG_WARNING("shape is zero, skip loading weight from file %s \n", filename.c_str());
+        return 0;
+    }
+    std::vector<T_IN> host_array(size);
+    std::ifstream     in(filename, std::ios::in | std::ios::binary);
+    if (!in.is_open()) {
+        FT_LOG_WARNING("file %s cannot be opened, loading model fails! \n", filename.c_str());
+        return 0;
+    }
+
+    size_t loaded_data_size = sizeof(T_IN) * size;
+    in.seekg(0, in.end);
+    in.seekg(0, in.beg);
+
+    FT_LOG_DEBUG("Read " + std::to_string(loaded_data_size) + " bytes from " + filename);
+    in.read((char*)host_array.data(), loaded_data_size);
+
+    size_t in_get_size = in.gcount();
+    if (in_get_size != loaded_data_size) {
+        FT_LOG_WARNING("file %s only has %ld, but request %ld, loading model fails! \n",
+                       filename.c_str(),
+                       in_get_size,
+                       loaded_data_size);
+        return 0;
+    }
+    auto scales = std::make_unique<float[]>(dim0);
+    auto invscales = std::make_unique<float[]>(dim0);
+    for(int i = 0; i < dim0; i++){
+        T_IN maxi = ((T_IN*)host_array.data())[i*dim1];
+        T_IN mini = ((T_IN*)host_array.data())[i*dim1];
+        for(int j = 0; j < dim1; j++){
+            T_IN data_i = *((T_IN*)host_array.data() + i*dim1 + j);
+            if((float)data_i > (float)maxi) maxi = data_i;
+            if((float)data_i < (float)mini) mini = data_i;
+        }
+        
+        assert(mini < (T_IN) 0);
+        float scale = (float)std::max((double)maxi / 127.0, (double)mini / 128.0);
+        float invs = 1.0f / scale;
+        scales[i] = scale;
+        invscales[i] = invs;
+        // FT_LOG_INFO("MAX: %f, MIN: %f", maxi, mini);
+    }
+
+    T_IN* d_data;
+    float* d_invscale;
+    int8_t* ikr;
+    float* d_scale;
+    deviceMalloc(&d_data, size, false);
+    deviceMalloc(&d_invscale, size, false);
+    deviceMalloc(&d_scale, size, false);
+    deviceMalloc(&ikr, size, false);
+    cudaH2Dcpy(d_invscale, invscales.get(), dim0);
+    cudaH2Dcpy(d_data, (T_IN*)host_array.data(), size);
+    cudaH2Dcpy(d_scale, scales.get(), dim0);
+    for(int i = 0; i < dim0; i++){
+        invokeQuantization((int8_t*)(ikr + dim1 * i), d_data + dim1 * i, dim1, d_scale + i, 0);
+    }
+    weight.int8_kernel = ikr;
+    weight.scale = d_scale;
+    deviceFree(d_data);
+    deviceFree(d_invscale);
+    in.close();
+    return 0;
+}
+
+// template<typename T>
+// int loadWeightFromBinFuncQ<T, half>(DenseWeight<T> &weight, std::vector<size_t> shape, std::string filename)
+// {   
+//     return 0;
+// }
+
 template int loadWeightFromBinFunc<float, float>(float* ptr, std::vector<size_t> shape, std::string filename);
 template int loadWeightFromBinFunc<half, float>(half* ptr, std::vector<size_t> shape, std::string filename);
+template int loadWeightFromBinFuncQ<float, float>(DenseWeight<float> &weight, std::vector<size_t> shape, std::string filename);
+template int loadWeightFromBinFuncQ<half, float>(DenseWeight<half> &weight, std::vector<size_t> shape, std::string filename);
 #ifdef ENABLE_BF16
 template int
 loadWeightFromBinFunc<__nv_bfloat16, float>(__nv_bfloat16* ptr, std::vector<size_t> shape, std::string filename);
+template int
+loadWeightFromBinFuncQ<__nv_bfloat16, float>(DenseWeight<__nv_bfloat16> &weight, std::vector<size_t> shape, std::string filename);
 #endif
 template int loadWeightFromBinFunc<float, half>(float* ptr, std::vector<size_t> shape, std::string filename);
 template int loadWeightFromBinFunc<half, half>(half* ptr, std::vector<size_t> shape, std::string filename);
+// template int loadWeightFromBinFuncQ<float, half>(DenseWeight<float> &weight, std::vector<size_t> shape, std::string filename);
+// template int loadWeightFromBinFuncQ<half, half>(DenseWeight<half> &weight, std::vector<size_t> shape, std::string filename);
 #ifdef ENABLE_BF16
-template int
-loadWeightFromBinFunc<__nv_bfloat16, half>(__nv_bfloat16* ptr, std::vector<size_t> shape, std::string filename);
+template int loadWeightFromBinFunc<__nv_bfloat16, half>(__nv_bfloat16* ptr, std::vector<size_t> shape, std::string filename);
 template int loadWeightFromBinFunc<float, __nv_bfloat16>(float* ptr, std::vector<size_t> shape, std::string filename);
 template int loadWeightFromBinFunc<half, __nv_bfloat16>(half* ptr, std::vector<size_t> shape, std::string filename);
 template int loadWeightFromBinFunc<__nv_bfloat16, __nv_bfloat16>(__nv_bfloat16*      ptr,
                                                                  std::vector<size_t> shape,
                                                                  std::string         filename);
+
+// template int loadWeightFromBinFuncQ<__nv_bfloat16, half>(DenseWeight<__nv_bfloat16> &weight, std::vector<size_t> shape, std::string filename);
+// template int loadWeightFromBinFuncQ<float, __nv_bfloat16>(DenseWeight<float> &weight, std::vector<size_t> shape, std::string filename);
+// template int loadWeightFromBinFuncQ<half, __nv_bfloat16>(DenseWeight<half> &weight, std::vector<size_t> shape, std::string filename);
+// template int loadWeightFromBinFuncQ<__nv_bfloat16, __nv_bfloat16>(DenseWeight<__nv_bfloat16>      &weight,
+//                                                                  std::vector<size_t> shape,
+//                                                                  std::string         filename);
 #endif  // ENABLE_BF16
 
 template<typename T>
@@ -349,13 +450,42 @@ int loadWeightFromBin(T* ptr, std::vector<size_t> shape, std::string filename, F
     return 0;
 }
 
+template<typename T>
+int loadWeightFromBinQ(DenseWeight<T> &weight, std::vector<size_t> shape, std::string filename, FtCudaDataType model_file_type)
+{
+    switch (model_file_type) {
+        case FtCudaDataType::FP32:
+            loadWeightFromBinFuncQ<T, float>(weight, shape, filename);
+            break;
+        case FtCudaDataType::FP16:
+            // loadWeightFromBinFuncQ<T, half>(weight, shape, filename);
+            assert(false);
+            break;
+#ifdef ENABLE_BF16
+        // case FtCudaDataType::BF16:
+        //     loadWeightFromBinFuncQ<T, __nv_bfloat16>(weight, shape, filename);
+        //     break;
+#endif
+        default:
+            FT_LOG_ERROR("Does not support FtCudaDataType=%d", model_file_type);
+            FT_CHECK(false);
+    }
+    return 0;
+}
+
 template int
 loadWeightFromBin(float* ptr, std::vector<size_t> shape, std::string filename, FtCudaDataType model_file_type);
 template int
 loadWeightFromBin(half* ptr, std::vector<size_t> shape, std::string filename, FtCudaDataType model_file_type);
+template int
+loadWeightFromBinQ(DenseWeight<float> &weight, std::vector<size_t> shape, std::string filename, FtCudaDataType model_file_type);
+template int
+loadWeightFromBinQ(DenseWeight<half> &weight, std::vector<size_t> shape, std::string filename, FtCudaDataType model_file_type);
 #ifdef ENABLE_BF16
 template int
 loadWeightFromBin(__nv_bfloat16* ptr, std::vector<size_t> shape, std::string filename, FtCudaDataType model_file_type);
+template int
+loadWeightFromBinQ(DenseWeight<__nv_bfloat16> &weight, std::vector<size_t> shape, std::string filename, FtCudaDataType model_file_type);
 #endif
 
 template<typename T_IN, typename T_OUT>

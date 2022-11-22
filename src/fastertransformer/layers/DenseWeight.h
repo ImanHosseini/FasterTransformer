@@ -26,6 +26,7 @@ struct DenseWeight {
     // for int8 kernel
     const int8_t* int8_kernel = nullptr;
     const float*  scale       = nullptr;
+    const T* qscale = nullptr;
 };
 
 }  // namespace fastertransformer

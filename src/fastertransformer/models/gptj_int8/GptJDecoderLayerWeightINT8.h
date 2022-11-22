@@ -38,6 +38,7 @@ public:
     GptJDecoderLayerWeightINT8& operator=(const GptJDecoderLayerWeightINT8& other);
 
     void loadModel(std::string dir_path, FtCudaDataType model_file_type);
+    void fakeModel();
 
     LayerNormWeight<T> pre_layernorm_weights;
     AttentionWeight<T> self_attention_weights;
@@ -50,6 +51,8 @@ private:
     int  tensor_para_rank_;
     bool is_maintain_buffer = false;
     T*   weights_ptr[9];
+    // int8_t* qwint8;
+    // float* qwscale;
 
     void setWeightPtr();
     void mallocWeights();

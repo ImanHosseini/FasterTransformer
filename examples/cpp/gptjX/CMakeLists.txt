@@ -12,18 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_subdirectory(bert)
-add_subdirectory(bert_int8)
-add_subdirectory(decoding)
-add_subdirectory(gpt)
-add_subdirectory(xlnet)
-add_subdirectory(swin)
-add_subdirectory(swin_int8)
-add_subdirectory(vit)
-add_subdirectory(vit_int8)
+add_executable(gptjX gptj_example.cc)
+target_link_libraries(gptjX PUBLIC -lcublas -lcublasLt -lcudart
+                      GptJ nvtx_utils gpt_example_utils word_list mpi_utils nccl_utils)
 
-add_subdirectory(gptj)
-add_subdirectory(gptjX)
-add_subdirectory(gptj_int8)
-add_subdirectory(gptneox)
-add_subdirectory(multi_gpu_gpt)
+# add_executable(gptj_triton_example gptj_triton_example.cc)
+# target_link_libraries(gptj_triton_example PUBLIC -lcublas -lcublasLt -lcudart -lpthread
+#                       GptJTritonBackend TransformerTritonBackend custom_ar_comm
+#                       gpt_example_utils word_list mpi_utils nccl_utils)

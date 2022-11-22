@@ -45,6 +45,8 @@ struct GptJWeightINT8 {
     GptJWeightINT8& operator=(const GptJWeightINT8& other);
 
     void loadModel(std::string dir_path);
+    void loadModelX(std::string dir_path);
+    void fakeModel();
 
     std::vector<GptJDecoderLayerWeightINT8<T>> decoder_layer_weights;
     const T*                               pre_decoder_embedding_table = nullptr;

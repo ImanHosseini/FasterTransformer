@@ -233,6 +233,62 @@ void GptJWeightINT8<T>::mallocWeights()
     is_maintain_buffer = true;
 }
 
+template<typename T> 
+void GptJWeightINT8<T>::fakeModel(){
+//     enum FtCudaDataType {
+//     FP32 = 0,
+//     FP16 = 1,
+//     BF16 = 2
+// };
+    // FtCudaDataType dtype =
+    // deviceMalloc(&weights_ptr[0], (size_t)(vocab_size_ * hidden_units_)); 
+}
+
+template<typename T>
+void GptJWeightINT8<T>::loadModelX(std::string dir_path)
+{
+    FtCudaDataType model_file_type = getModelFileType(dir_path + "/config.ini", "gptj");
+    FT_CHECK(is_maintain_buffer == true);
+
+    loadWeightFromBin<T>(
+        weights_ptr[0], {(size_t)(vocab_size_ * hidden_units_)}, dir_path + "/model.wte.bin", model_file_type);
+    loadWeightFromBin<T>(
+        weights_ptr[1], {(size_t)hidden_units_}, dir_path + "/model.final_layernorm.bias.bin", model_file_type);
+    loadWeightFromBin<T>(
+        weights_ptr[2], {(size_t)hidden_units_}, dir_path + "/model.final_layernorm.weight.bin", model_file_type);
+    loadWeightFromBin<T>(weights_ptr[3],
+                         {(size_t)(vocab_size_ * hidden_units_)},
+                         dir_path + "/model.lm_head.weight.bin",
+                         model_file_type);
+    loadWeightFromBin<T>(weights_ptr[4], {(size_t)vocab_size_}, dir_path + "/model.lm_head.bias.bin", model_file_type);
+
+    // prompt table: load weights from bin
+    if (malloc_load_prompt_weights_) {
+        for (auto const& prompt : prompt_learning_pair_) {
+            std::string task_name      = prompt.first;
+            int         task_name_id   = prompt.second.first;
+            int         prompt_length  = prompt.second.second;
+            size_t      task_weight_id = num_base_weights + (size_t)task_name_id;
+
+            std::string prompt_weight_path_name = (prompt_learning_type_ == PromptLearningType::p_prompt_tuning) ?
+                                                      (dir_path + "/model.prompt_table." + task_name + ".weight.bin") :
+                                                      (dir_path + "/model.prefix_prompt." + task_name + ".weight."
+                                                       + std::to_string(tensor_para_rank_) + ".bin");
+
+            if (prompt_length > 0) {
+                loadWeightFromBin<T>(weights_ptr[task_weight_id],
+                                     {(size_t)(prompt_length * (int)prompt_token_weight_size_)},
+                                     prompt_weight_path_name,
+                                     model_file_type);
+            }
+        }
+    }
+
+    for (int l = 0; l < num_layer_; l++) {
+        decoder_layer_weights[l].loadModel(dir_path + "/model.layers." + std::to_string(l), model_file_type);
+    }
+}
+
 template<typename T>
 void GptJWeightINT8<T>::loadModel(std::string dir_path)
 {

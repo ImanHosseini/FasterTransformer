@@ -319,7 +319,8 @@ GptJINT8<T>::GptJINT8(size_t                              max_batch_size,
     pipeline_para_(pipeline_para),
     local_head_num_(head_num / tensor_para.world_size_),
     custom_all_reduce_comm_(custom_all_reduce_comm),
-    enable_custom_all_reduce_(enable_custom_all_reduce)
+    enable_custom_all_reduce_(enable_custom_all_reduce),
+    int8_mode_(int8_mode)
 {
     int local_vacab_size = ceil(vocab_size_ / 1.f / tensor_para_.world_size_);
     if (std::is_same<half, T>::value) {
@@ -1233,7 +1234,7 @@ template class GptJINT8<float>;
 template class GptJINT8<half>;
 // template class GptJINT8<int8_t>;
 #ifdef ENABLE_BF16
-// template class GptJINT8<__nv_bfloat16>;
+template class GptJINT8<__nv_bfloat16>;
 #endif
 
 }  // namespace fastertransformer
