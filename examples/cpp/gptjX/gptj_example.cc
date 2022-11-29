@@ -53,6 +53,13 @@ void read_start_idsX(int batch_size,
         if (cmnd == "") {
             break;
         }
+        if(cmnd[0] == '['){
+            std::string tmp = cmnd.substr(1);
+            cmnd = tmp;
+        }
+        if(cmnd[cmnd.size()-1] == ']'){
+            cmnd.pop_back();
+        }
         // std::cout << cmnd << std::endl;
         if (cmnd == "!EXIT") {
             // maybe better cleanup?
