@@ -180,7 +180,8 @@ void gptj_example(const INIReader reader)
 
     const size_t request_batch_size = reader.GetInteger("request", "request_batch_size");
     // The length of tokens we hope this model to generate
-    const int request_output_len = reader.GetInteger("request", "request_output_len");
+    // const int request_output_len = reader.GetInteger("request", "request_output_len");
+    const int request_output_len = 200;
     const uint32_t memory_len = reader.GetInteger("request", "memory_len", 0);
 
     FT_CHECK(head_num % tensor_para_size == 0);
@@ -230,7 +231,7 @@ void gptj_example(const INIReader reader)
 
     // Handle bad_words dictionary
     std::vector<int> bad_words;
-    read_word_list("../examples/cpp/gptj/bad_words.csv", bad_words);
+    // read_word_list("../examples/cpp/gptj/bad_words.csv", bad_words);
 
     int* d_bad_words = nullptr;
     deviceMalloc(&d_bad_words, bad_words.size(), false);
@@ -238,7 +239,7 @@ void gptj_example(const INIReader reader)
 
     // Handle stop_words dictionary
     std::vector<int> stop_words;
-    read_word_list("../examples/cpp/gptj/stop_words.csv", stop_words);
+    // read_word_list("../examples/cpp/gptj/stop_words.csv", stop_words);
 
     const size_t stop_words_len = stop_words.size() / 2;
     // Tile with same dict for each element
@@ -255,13 +256,19 @@ void gptj_example(const INIReader reader)
     int max_input_len = -1;
     std::vector<int> v_start_lengths;
     std::vector<int> v_start_ids;
-    read_start_ids(request_batch_size,
-                   &v_start_lengths,
-                   &v_start_ids,
-                   max_input_len,
-                   end_id,
-                   1,
-                   "../examples/cpp/gptj/start_ids.csv");
+    // read_start_ids(request_batch_size,
+    //                &v_start_lengths,
+    //                &v_start_ids,
+    //                max_input_len,
+    //                end_id,
+    //                1,
+    //                "../examples/cpp/gptj/start_ids.csv");
+    /* DUMMY FOR WARMUP */
+    v_start_lengths.push_back(10);
+    for(int i = 0; i < 10; i++){
+        v_start_ids.push_back(13);
+    }
+    max_input_len = 10;
     // read_start_idsX(request_batch_size,
     //                &v_start_lengths,
     //                &v_start_ids,
@@ -465,6 +472,10 @@ void gptj_example(const INIReader reader)
 
     // loop
     while (true) {
+        v_start_ids.clear();
+        v_start_lengths.clear();
+        deviceFree(d_input_ids);
+        deviceFree(d_input_lengths);
         mpi::barrier();
         cudaDeviceSynchronize();
         gettimeofday(&start, NULL);
@@ -476,13 +487,16 @@ void gptj_example(const INIReader reader)
         }
         else {
             // conditional case.
+            printf("Mallocing...\n");
             deviceMalloc(&d_input_ids, request_batch_size * max_input_len, false);
             deviceMalloc(&d_input_lengths, request_batch_size, false);
             cudaH2Dcpy(d_input_ids, v_start_ids.data(), request_batch_size * max_input_len);
             cudaH2Dcpy(d_input_lengths, v_start_lengths.data(), request_batch_size);
         }
+        input_tensors.erase("input_ids");
+        input_tensors.erase("input_lengths");
         input_tensors.insert({"input_ids", Tensor{MEMORY_GPU, TYPE_INT32, std::vector<size_t>{request_batch_size, (size_t)max_input_len}, d_input_ids}});
-        input_tensors.insert({"input_ids", Tensor{MEMORY_GPU, TYPE_INT32, std::vector<size_t>{request_batch_size}, d_input_lengths}});
+        input_tensors.insert({"input_lengths", Tensor{MEMORY_GPU, TYPE_INT32, std::vector<size_t>{request_batch_size}, d_input_lengths}});
         for (int i = 0; i < ite; ++i) {
             gpt.forward(&output_tensors, &input_tensors, &gpt_weights);
         }
